@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isPlayer(room) { return signedIn() && exists(/databases/$(database)/documents/rooms/$(room)/players/$(request.auth.uid)); }
+    function isHost(room) { return signedIn() && get(/databases/$(database)/documents/rooms/$(room)).data.hostId == request.auth.uid; }
+    match /rooms/{room} {
+      allow create: if signedIn() && request.resource.data.hostId == request.auth.uid;
+      allow read: if isPlayer(room);
+      allow update: if isHost(room) && !('secretWord' in request.resource.data);
+      match /players/{uid} {
+        allow read: if isPlayer(room) && (uid == request.auth.uid || !('word' in resource.data));
+        allow create: if signedIn() && uid == request.auth.uid;
+        allow update: if uid == request.auth.uid || isHost(room);
+        allow delete: if isHost(room);
+      }
+      match /votes/{uid} {
+        allow read: if isHost(room) || uid == request.auth.uid;
+        allow create: if uid == request.auth.uid && isPlayer(room) && !exists(/databases/$(database)/documents/rooms/$(room)/votes/$(uid));
+        allow update, delete: if false;
+      }
+    }
+    match /users/{uid}/customWords/{word} { allow read, write: if signedIn() && uid == request.auth.uid; }
+  }
+}
